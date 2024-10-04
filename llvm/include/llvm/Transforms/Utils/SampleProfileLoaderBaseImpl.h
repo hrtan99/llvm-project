@@ -247,6 +247,9 @@ protected:
   void applyProfi(FunctionT &F, BlockEdgeMap &Successors,
                   BlockWeightMap &SampleBlockWeights,
                   BlockWeightMap &BlockWeights, EdgeWeightMap &EdgeWeights);
+  void applyProfiProxy(FunctionT &F, BlockEdgeMap &Successors,
+                  BlockWeightMap &SampleBlockWeights,
+                  BlockWeightMap &BlockWeights, EdgeWeightMap &EdgeWeights);
   uint64_t visitEdge(Edge E, unsigned *NumUnknownEdges, Edge *UnknownEdge);
   void buildEdges(FunctionT &F);
   bool propagateThroughEdges(FunctionT &F, bool UpdateBlockCount);
@@ -918,6 +921,8 @@ template <typename BT>
 void SampleProfileLoaderBaseImpl<BT>::propagateWeights(FunctionT &F) {
   // Flow-based profile inference is only usable with BasicBlock instantiation
   // of SampleProfileLoaderBaseImpl.
+  outs() << "Entering propagateWeights\n";
+  llvm::outs().flush();  // 刷新输出
   if (SampleProfileUseProfi) {
     // Prepare block sample counts for inference.
     BlockWeightMap SampleBlockWeights;
@@ -927,7 +932,7 @@ void SampleProfileLoaderBaseImpl<BT>::propagateWeights(FunctionT &F) {
         SampleBlockWeights[&BI] = Weight.get();
     }
     // Fill in BlockWeights and EdgeWeights using an inference algorithm.
-    applyProfi(F, Successors, SampleBlockWeights, BlockWeights, EdgeWeights);
+    applyProfiProxy(F, Successors, SampleBlockWeights, BlockWeights, EdgeWeights);
   } else {
     bool Changed = true;
     unsigned I = 0;
@@ -975,6 +980,38 @@ void SampleProfileLoaderBaseImpl<FT>::applyProfi(
     BlockWeightMap &BlockWeights, EdgeWeightMap &EdgeWeights) {
   auto Infer = SampleProfileInference<FT>(F, Successors, SampleBlockWeights);
   Infer.apply(BlockWeights, EdgeWeights);
+}
+
+template <typename FT>
+void SampleProfileLoaderBaseImpl<FT>::applyProfiProxy(
+    FunctionT &F, BlockEdgeMap &Successors, BlockWeightMap &SampleBlockWeights,
+    BlockWeightMap &BlockWeights, EdgeWeightMap &EdgeWeights) {
+  outs() << "\nApplying profi inference\n";
+  outs() << "\nFunction: " << F.getName() << "\n";
+  outs() << "\nSampleBlockWeights:\n";
+  for (auto &I : SampleBlockWeights) {
+    outs() << I.first->getNumber() << ": " << I.second << "\n";
+  }
+  outs() << "\nBlockWeights before inference:\n";
+  for (auto &I : BlockWeights) {
+    outs() << I.first->getNumber() << ": " << I.second << "\n";
+  }
+  outs() << "\nEdgeWeights before inference:\n";
+  for (auto &I : EdgeWeights) {
+    outs() << I.first.first->getNumber() << "->" << I.first.second->getNumber()
+           << ": " << I.second << "\n";
+  }
+  applyProfiProxy(F, Successors, SampleBlockWeights, BlockWeights, EdgeWeights);
+  outs() << "\nBlockWeights after inference:\n";
+  for (auto &I : BlockWeights) {
+    outs() << I.first->getNumber() << ": " << I.second << "\n";
+  }
+  outs() << "\nEdgeWeights after inference:\n";
+  for (auto &I : EdgeWeights) {
+    outs() << I.first.first->getNumber() << "->" << I.first.second->getNumber()
+           << ": " << I.second << "\n";
+  }
+  outs() << "End of applying profi inference\n";
 }
 
 /// Generate branch weight metadata for all branches in \p F.
