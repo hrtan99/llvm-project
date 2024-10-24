@@ -43,6 +43,7 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/Utils/SampleProfileInference.h"
 #include "llvm/Transforms/Utils/SampleProfileLoaderBaseUtil.h"
+#include "CSVUtil.h"
 
 namespace llvm {
 using namespace sampleprof;
@@ -986,6 +987,24 @@ template <typename FT>
 void SampleProfileLoaderBaseImpl<FT>::applyProfiProxy(
     FunctionT &F, BlockEdgeMap &Successors, BlockWeightMap &SampleBlockWeights,
     BlockWeightMap &BlockWeights, EdgeWeightMap &EdgeWeights) {
+
+  using namespace std;  
+  shared_ptr<Row> headLine = make_shared<Row>();
+  (*headLine)
+    .appendData("func")
+    .appendData("block_before")
+    .appendData("block_after")
+    ;
+
+  bool isExist = CSV::create("sample.csv");
+  CSV& sample_csv = CSV::getRef();
+  if (!isExist) {
+    sample_csv.setHead(headLine);
+  }
+
+  shared_ptr<Row> row = make_shared<Row>();
+  row->appendData(F.getName().str());
+
   outs() << "\nApplying profi inference\n";
   outs() << "\nFunction: " << F.getName() << "\n";
   outs() << "\nSampleBlockWeights:\n";
@@ -993,19 +1012,35 @@ void SampleProfileLoaderBaseImpl<FT>::applyProfiProxy(
     outs() << I.first->getNumber() << ": " << I.second << "\n";
   }
   outs() << "\nBlockWeights before inference:\n";
+
+  std::string block_before_str = "";
   for (auto &I : BlockWeights) {
     outs() << I.first->getNumber() << ": " << I.second << "\n";
+    block_before_str += to_string(I.first->getNumber()) + ":" + to_string(I.second) + ",";
   }
+  block_before_str.pop_back();
+  row->appendData("\"" + block_before_str + "\"");
+
   outs() << "\nEdgeWeights before inference:\n";
   for (auto &I : EdgeWeights) {
     outs() << I.first.first->getNumber() << "->" << I.first.second->getNumber()
            << ": " << I.second << "\n";
   }
-  applyProfiProxy(F, Successors, SampleBlockWeights, BlockWeights, EdgeWeights);
+  applyProfi(F, Successors, SampleBlockWeights, BlockWeights, EdgeWeights);
+  
+  std::string block_after_str = "";
+  
   outs() << "\nBlockWeights after inference:\n";
   for (auto &I : BlockWeights) {
     outs() << I.first->getNumber() << ": " << I.second << "\n";
+    block_after_str += to_string(I.first->getNumber()) + ":" + to_string(I.second) + ",";
   }
+  block_after_str.pop_back();
+  row->appendData("\"" + block_after_str + "\"");
+  sample_csv.appendRow(row);
+
+  sample_csv.flush();
+
   outs() << "\nEdgeWeights after inference:\n";
   for (auto &I : EdgeWeights) {
     outs() << I.first.first->getNumber() << "->" << I.first.second->getNumber()
