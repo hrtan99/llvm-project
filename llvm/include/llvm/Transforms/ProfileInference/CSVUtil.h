@@ -7,6 +7,10 @@
 #include <string>
 #include <sstream>
 #include <type_traits>
+#include <mutex>
+#include <unistd.h> // 包含 getpid()
+
+extern std::mutex mtx;
 
 namespace llvm {
 
@@ -137,6 +141,8 @@ private:
     int currentRow = 0;
     static CSV* instance;
 public:
+    CSV(const CSV&) = delete;
+    CSV& operator=(const CSV&) = delete;
     CSV() { }
     CSV(const std::string& _name) : name(_name) { }
     CSV(const std::string& _name, std::shared_ptr<Row> _headLine) : name(_name), headLine(_headLine) { }
@@ -144,22 +150,26 @@ public:
         headLine = std::make_shared<Row>(_data);
     }
 
+    static bool create(const std::string& name) {
+        if (!CSV::instance) {
+            std::unique_lock<std::mutex> lock(mtx);
+            // pid_t processID = getpid(); // 获取当前进程 ID
+            // std::cout << "Current process ID: " << processID << std::endl;
+            if (!CSV::instance) {
+                printf("INFO: Creating a new csv file ... %s\n", name.c_str());
+                instance = new CSV(name);
+                return true;
+            }
+        }
+        return false;
+    }
+
     static CSV& getRef() {
-        if (!instance) instance = new CSV();
         return *instance;
     }
 
     static CSV* get() {
-        if (!instance) instance = new CSV();
         return instance;
-    }
-
-    static bool create(const std::string& name) {
-        if (!instance) {
-            instance = new CSV(name);
-            return true;
-        }
-        return false;
     }
 
     CSV& clear() {

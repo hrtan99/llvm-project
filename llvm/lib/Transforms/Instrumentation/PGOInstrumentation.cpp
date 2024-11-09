@@ -1951,6 +1951,7 @@ PGOInstrumentationGenCreateVar::run(Module &M, ModuleAnalysisManager &MAM) {
 
 PreservedAnalyses PGOInstrumentationGen::run(Module &M,
                                              ModuleAnalysisManager &MAM) {
+  outs() << "Running PGOInstrumentationGen\n";
   auto &FAM = MAM.getResult<FunctionAnalysisManagerModuleProxy>(M).getManager();
   auto LookupTLI = [&FAM](Function &F) -> TargetLibraryInfo & {
     return FAM.getResult<TargetLibraryAnalysis>(F);
@@ -2306,6 +2307,7 @@ PGOInstrumentationUse::PGOInstrumentationUse(
 PreservedAnalyses PGOInstrumentationUse::run(Module &M,
                                              ModuleAnalysisManager &MAM) {
 
+  outs() << "Running PGOInstrumentationUse\n";
   auto &FAM = MAM.getResult<FunctionAnalysisManagerModuleProxy>(M).getManager();
   auto LookupTLI = [&FAM](Function &F) -> TargetLibraryInfo & {
     return FAM.getResult<TargetLibraryAnalysis>(F);

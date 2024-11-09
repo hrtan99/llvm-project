@@ -81,6 +81,7 @@
 #include "llvm/Transforms/Instrumentation/PGOCtxProfLowering.h"
 #include "llvm/Transforms/Instrumentation/PGOForceFunctionAttrs.h"
 #include "llvm/Transforms/Instrumentation/PGOInstrumentation.h"
+#include "llvm/Transforms/ProfileInference/PGOInstrumentationPrint.h"
 #include "llvm/Transforms/Scalar/ADCE.h"
 #include "llvm/Transforms/Scalar/AlignmentFromAssumptions.h"
 #include "llvm/Transforms/Scalar/AnnotationRemarks.h"
@@ -821,11 +822,13 @@ void PassBuilder::addPGOInstrPasses(ModulePassManager &MPM,
                                     std::string ProfileRemappingFile,
                                     IntrusiveRefCntPtr<vfs::FileSystem> FS) {
   assert(Level != OptimizationLevel::O0 && "Not expecting O0 here!");
-
+  outs() << "Adding Pass PGOInstrumentationGen\n";
   if (!RunProfileGen) {
     assert(!ProfileFile.empty() && "Profile use expecting a profile file!");
     MPM.addPass(
         PGOInstrumentationUse(ProfileFile, ProfileRemappingFile, IsCS, FS));
+    outs() << "Adding Pass PGOInstrumentationPrint\n";
+    MPM.addPass(PGOInstrumentationPrint());
     // Cache ProfileSummaryAnalysis once to avoid the potential need to insert
     // RequireAnalysisPass for PSI before subsequent non-module passes.
     MPM.addPass(RequireAnalysisPass<ProfileSummaryAnalysis, Module>());
@@ -858,10 +861,13 @@ void PassBuilder::addPGOInstrPassesForO0(
     ModulePassManager &MPM, bool RunProfileGen, bool IsCS,
     bool AtomicCounterUpdate, std::string ProfileFile,
     std::string ProfileRemappingFile, IntrusiveRefCntPtr<vfs::FileSystem> FS) {
+  outs() << "Adding Pass PGOInstrumentationGen\n";
   if (!RunProfileGen) {
     assert(!ProfileFile.empty() && "Profile use expecting a profile file!");
     MPM.addPass(
         PGOInstrumentationUse(ProfileFile, ProfileRemappingFile, IsCS, FS));
+    outs() << "Adding Pass PGOInstrumentationPrint\n";
+    MPM.addPass(PGOInstrumentationPrint());
     // Cache ProfileSummaryAnalysis once to avoid the potential need to insert
     // RequireAnalysisPass for PSI before subsequent non-module passes.
     MPM.addPass(RequireAnalysisPass<ProfileSummaryAnalysis, Module>());
@@ -1036,6 +1042,7 @@ PassBuilder::buildModuleInlinerPipeline(OptimizationLevel Level,
 ModulePassManager
 PassBuilder::buildModuleSimplificationPipeline(OptimizationLevel Level,
                                                ThinOrFullLTOPhase Phase) {
+  outs() << "Building ModuleSimplificationPipeline\n";
   assert(Level != OptimizationLevel::O0 &&
          "Should not be used for O0 pipeline");
 
@@ -1051,6 +1058,7 @@ PassBuilder::buildModuleSimplificationPipeline(OptimizationLevel Level,
     MPM.addPass(SampleProfileProbePass(TM));
 
   bool HasSampleProfile = PGOOpt && (PGOOpt->Action == PGOOptions::SampleUse);
+  outs() << "\t HasSampleProfile: " << HasSampleProfile << "\n";
 
   // In ThinLTO mode, when flattened profile is used, all the available
   // profile information will be annotated in PreLink phase so there is
@@ -1058,6 +1066,7 @@ PassBuilder::buildModuleSimplificationPipeline(OptimizationLevel Level,
   bool LoadSampleProfile =
       HasSampleProfile &&
       !(FlattenedProfileUsed && Phase == ThinOrFullLTOPhase::ThinLTOPostLink);
+  outs() << "\t LoadSampleProfile: " << LoadSampleProfile << "\n";
 
   // During the ThinLTO backend phase we perform early indirect call promotion
   // here, before globalopt. Otherwise imported available_externally functions
@@ -1388,6 +1397,12 @@ void PassBuilder::addVectorPasses(OptimizationLevel Level,
 ModulePassManager
 PassBuilder::buildModuleOptimizationPipeline(OptimizationLevel Level,
                                              ThinOrFullLTOPhase LTOPhase) {
+  outs() << "Building ModuleOptimizationPipeline\n";
+  if (PGOOpt.has_value())
+    outs() << "PGOOpt ProfileFile: " << PGOOpt->ProfileFile << "\n";
+  else {
+    outs() << "PGOOpt is empty\n";
+  }
   const bool LTOPreLink = isLTOPreLink(LTOPhase);
   ModulePassManager MPM;
 
@@ -1586,6 +1601,8 @@ PassBuilder::buildPerModuleDefaultPipeline(OptimizationLevel Level,
 
   ModulePassManager MPM;
 
+  MPM.addPass(PGOInstrumentationPrint());
+  
   // Convert @llvm.global.annotations to !annotation metadata.
   MPM.addPass(Annotation2MetadataPass());
 
@@ -1771,6 +1788,7 @@ PassBuilder::buildLTOPreLinkDefaultPipeline(OptimizationLevel Level) {
 ModulePassManager
 PassBuilder::buildLTODefaultPipeline(OptimizationLevel Level,
                                      ModuleSummaryIndex *ExportSummary) {
+  outs() << "Building LTODefaultPipeline\n";
   ModulePassManager MPM;
 
   invokeFullLinkTimeOptimizationEarlyEPCallbacks(MPM, Level);
@@ -2094,10 +2112,13 @@ PassBuilder::buildLTODefaultPipeline(OptimizationLevel Level,
 
 ModulePassManager PassBuilder::buildO0DefaultPipeline(OptimizationLevel Level,
                                                       bool LTOPreLink) {
+  outs() << "Building O0 pipeline\n";
   assert(Level == OptimizationLevel::O0 &&
          "buildO0DefaultPipeline should only be used with O0");
 
   ModulePassManager MPM;
+
+  MPM.addPass(PGOInstrumentationPrint());
 
   // Perform pseudo probe instrumentation in O0 mode. This is for the
   // consistency between different build modes. For example, a LTO build can be
@@ -2105,7 +2126,18 @@ ModulePassManager PassBuilder::buildO0DefaultPipeline(OptimizationLevel Level,
   // the postlink will require pseudo probe instrumentation in the prelink.
   if (PGOOpt && PGOOpt->PseudoProbeForProfiling)
     MPM.addPass(SampleProfileProbePass(TM));
-
+  
+  std::string PGOAction = "";
+  if (PGOOpt)
+    if (PGOOpt->Action == PGOOptions::IRInstr)
+      PGOAction = " -pgo-instr-gen";
+    else if (PGOOpt->Action == PGOOptions::IRUse)
+      PGOAction = " -pgo-instr-use";
+    else if (PGOOpt->Action == PGOOptions::SampleUse)
+      PGOAction = " -pgo-sample-use";
+    else if (PGOOpt->Action == PGOOptions::NoAction)
+      PGOAction = " no-action";
+  outs() <<  "PGO Action: " << PGOAction << "\n";
   if (PGOOpt && (PGOOpt->Action == PGOOptions::IRInstr ||
                  PGOOpt->Action == PGOOptions::IRUse))
     addPGOInstrPassesForO0(
