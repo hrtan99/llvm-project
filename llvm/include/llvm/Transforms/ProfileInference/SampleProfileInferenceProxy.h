@@ -62,9 +62,9 @@ public:
         std::string name = PGOBenchmarkName + "_" + to_string(processID) + ".sample.csv";
         bool isExist = CSV::create(SampleDataFileName);
         CSV& sample_csv = CSV::getRef();
-        if (!isExist) {
-            sample_csv.setHead(headLine);
-        }
+        // if (!isExist) {
+        //     sample_csv.setHead(headLine);
+        // }
 
         shared_ptr<Row> row = make_shared<Row>();
         row->appendData(F.getName().str());
@@ -75,73 +75,15 @@ public:
 
         std::string block_before_str = "";
 
-
-        std::string feature_str = "";
-        std::string ajacent_str = "";
         // Only execute this part if BasicBlockT is of type BasicBlock
         if constexpr (std::is_same_v<BasicBlockT, llvm::BasicBlock>) {
-            std::vector<BasicBlock*> topoOrder = getTopologicalOrder();
-            
-            for (BasicBlock* BB : topoOrder) {
-                block_before_str += to_string(BB->getNumber()) + ":" + to_string(BlockWeights[BB]) + ",";
-                outs() << BB->getNumber() << ": " << BlockWeights[BB] << "\n";
-                int callNumber = 0, arithmeticNumber = 0, logicalNumber = 0;
-                int loadNumber = 0, storeNumber = 0, intrinsicNumber = 0;
-                int phiNumber = 0, gepNumber = 0, castNumber = 0;
-                int instructionNumber = BB->size(), successorNumber = succ_size(BB), predecessorNumber = pred_size(BB);
-                bool isEntry = BB == &F.getEntryBlock(), isExit = succ_size(BB) == 0;
-                for (auto & I : *BB) {
-                    if (isa<CallInst>(I)) {
-                        callNumber++;
-                    } else if (isa<BinaryOperator>(I)) {
-                        arithmeticNumber++;
-                    } else if (isa<CmpInst>(I)) {
-                        logicalNumber++;
-                    } else if (isa<LoadInst>(I)) {
-                        loadNumber++;
-                    } else if (isa<StoreInst>(I)) {
-                        storeNumber++;
-                    } else if (isa<IntrinsicInst>(I)) {
-                        intrinsicNumber++;
-                    } else if (isa<PHINode>(I)) {
-                        phiNumber++;
-                    } else if (isa<GetElementPtrInst>(I)) {
-                        gepNumber++;
-                    } else if (isa<CastInst>(I)) {
-                        castNumber++;
-                    }
-                }
-                feature_str += to_string(BB->getNumber()) + ":" + to_string(callNumber) + ","
-                    + to_string(arithmeticNumber) + "," + to_string(logicalNumber) + ","
-                    + to_string(loadNumber) + "," + to_string(storeNumber) + ","
-                    + to_string(intrinsicNumber) + "," + to_string(phiNumber) + ","
-                    + to_string(gepNumber) + "," + to_string(castNumber) + ","
-                    + to_string(instructionNumber) + "," + to_string(successorNumber) + "," + to_string(predecessorNumber) + ","
-                    + to_string(isEntry) + "," + to_string(isExit) + ";";
-            }
 
-            for (BasicBlock& BB : F) {
-                ajacent_str += to_string(BB.getNumber()) + ":";
-                std::string neighbor_str = "";
-                for (BasicBlock* succ : successors(&BB)) {
-                    neighbor_str += to_string(succ->getNumber()) + ",";
-                }
-                if (neighbor_str.length() > 0) {
-                    neighbor_str.pop_back();
-                    ajacent_str += neighbor_str;
-                }
-                ajacent_str += ";";
-            }
         }
         else {
             outs() << "BasicBlockT is not of type BasicBlock\n";
         }
         if (block_before_str.length() > 0)
             block_before_str.pop_back();
-        if (feature_str.length() > 0)
-            feature_str.pop_back();
-        if (ajacent_str.length() > 0)
-            ajacent_str.pop_back();
 
         // for (auto &I : BlockWeights) {
         //     outs() << I.first->getNumber() << ": " << I.second << "\n";
@@ -182,17 +124,12 @@ public:
                 block_after_str += to_string(BB->getNumber()) + ":" + to_string(BlockWeights[BB]) + ",";
             }
         }
-        // for (auto &I : BlockWeights) {
-        //     outs() << I.first->getNumber() << ": " << I.second << "\n";
-        //     block_after_str += to_string(I.first->getNumber()) + ":" + to_string(I.second) + ",";
-        // }
+
         if (block_after_str.length() > 0)
             block_after_str.pop_back();
 
         row->appendData("\"" + block_before_str + "\"");
         row->appendData("\"" + block_after_str + "\"");
-        row->appendData("\"" + feature_str + "\"");
-        row->appendData("\"" + ajacent_str + "\"");
         sample_csv.appendRow(row);
 
         sample_csv.flush();
