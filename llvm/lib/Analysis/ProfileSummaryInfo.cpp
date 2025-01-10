@@ -55,17 +55,12 @@ void ProfileSummaryInfo::refresh() {
   if (SummaryMD)
     Summary.reset(ProfileSummary::getFromMD(SummaryMD));
   else 
-    outs() << "ProfileSummaryInfo::refresh: SummaryMD is null\n";
 
   if (!hasProfileSummary()) {
-    outs() << "ProfileSummaryInfo::refresh: Tring to get non CS profile summary\n";
     // This will actually return PSK_Instr or PSK_Sample summary.
     SummaryMD = M->getProfileSummary(/* IsCS */ false);
     if (SummaryMD) {
       Summary.reset(ProfileSummary::getFromMD(SummaryMD));
-    }
-    else {
-      outs() << "ProfileSummaryInfo::refresh: non-CS SummaryMD is null\n";
     }
   }
   if (!hasProfileSummary())
