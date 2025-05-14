@@ -50,6 +50,12 @@ public:
     // Proxy method to apply the profile inference algorithm
     void apply(BlockWeightMap &BlockWeights, EdgeWeightMap &EdgeWeights) {
 
+        // skip if the function contains only one basic block or no basic block
+        if (F.size() == 0 || F.size() == 1) {
+            outs() << "Skip Function with " << F.size() << " BB: " << F.getName() << "\n";
+            return;
+        }
+
         using namespace std;  
         shared_ptr<Row> headLine = make_shared<Row>();
         (*headLine)
@@ -59,8 +65,9 @@ public:
             ;
 
         pid_t processID = getpid(); // 获取当前进程 ID
-        std::string name = PGOBenchmarkName + "_" + to_string(processID) + ".sample.csv";
-        bool isExist = CSV::create(SampleDataFileName);
+        // std::string name = PGOBenchmarkName + "_" + to_string(processID) + ".sample.csv";
+        std::string fileName = SampleDataFileName + "." + to_string(processID);
+        bool isExist = CSV::create(fileName);
         CSV& sample_csv = CSV::getRef();
         // if (!isExist) {
         //     sample_csv.setHead(headLine);
@@ -71,13 +78,15 @@ public:
 
         outs() << "\nApplying profi inference\n";
         outs() << "\nFunction: " << F.getName() << "\n";
-        outs() << "\nBlockWeights before inference:\n";
 
         std::string block_before_str = "";
-
         // Only execute this part if BasicBlockT is of type BasicBlock
         if constexpr (std::is_same_v<BasicBlockT, llvm::BasicBlock>) {
-
+            std::vector<BasicBlock*> topoOrder = getTopologicalOrder();
+            for (BasicBlock* BB : topoOrder) {
+                outs() << BB->getNumber() << ": " << BlockWeights[BB] << "\n";
+                block_before_str += to_string(BB->getNumber()) + ":" + to_string(BlockWeights[BB]) + ",";
+            }
         }
         else {
             outs() << "BasicBlockT is not of type BasicBlock\n";
@@ -88,9 +97,12 @@ public:
         // for (auto &I : BlockWeights) {
         //     outs() << I.first->getNumber() << ": " << I.second << "\n";
         //     int blockNumber = I.first->getNumber();
-
         //     block_before_str += to_string(I.first->getNumber()) + ":" + to_string(I.second) + ",";
         // }
+
+
+        outs() << "\nBlockWeights before inference:\n";
+        outs() << block_before_str << "\n";
 
         outs() << "\nEdgeWeights before inference:\n";
         for (auto &I : EdgeWeights) {
@@ -102,11 +114,19 @@ public:
         for (auto &I : BlockWeights) {
             totalExcutionCount += I.second;
         }
+        
+        // record start time
+        auto start = std::chrono::high_resolution_clock::now();
 
         int blockWeightSizeBefore = BlockWeights.size(), BBSizeBefore = F.size();
         inference.apply(BlockWeights, EdgeWeights);
         int blockWeightSizeAfter = BlockWeights.size(), BBSizeAfter = F.size();
 
+        // record end time
+        auto end = std::chrono::high_resolution_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+        outs() << "Inference time: " << duration.count() << " microseconds\n";
+        
         if (totalExcutionCount && (blockWeightSizeBefore != blockWeightSizeAfter || BBSizeBefore != BBSizeAfter)) {
             outs() << "Error: BlockWeight size or BB size changed after inference for function " << F.getName() << "\n";
             outs() << "BlockWeight size before: " << blockWeightSizeBefore << ", after: " << blockWeightSizeAfter << "\n";
